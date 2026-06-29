@@ -986,6 +986,8 @@ function generateWeeklyReport() {
   
   reportSheet.getRange("Q2").setValue(nowStr);
   reportSheet.getRange("Q3").setValue(picName);
+
+  SpreadsheetApp.getUi().alert("Sukses", "Weekly Report berhasil di-generate!", SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 function generateWeeklyReportMenu() {

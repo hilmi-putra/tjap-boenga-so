@@ -1558,7 +1558,19 @@ function generateMonthlyReport() {
     const outlet = row[2];
 
     if (!rawDate) continue;
-    const dateObj = normalizeDate(rawDate);
+    
+    let dateObj;
+    if (typeof rawDate === "string") {
+      const dateParts = rawDate.split("/");
+      if (dateParts.length === 3) {
+        dateObj = new Date(dateParts[2], dateParts[1] - 1, dateParts[0]);
+      } else {
+        dateObj = new Date(rawDate);
+      }
+    } else {
+      dateObj = new Date(rawDate);
+    }
+
     if (!dateObj || isNaN(dateObj.getTime())) continue;
 
     if (dateObj.getMonth() !== targetMonth || dateObj.getFullYear() !== year) {

@@ -1006,14 +1006,18 @@ function generateWeeklyReportMenu() {
   const mode = response.getResponseText().trim();
 
   if (mode === "1") {
-    prepareCurrentWeek();
-    generateWeeklyReport();
+    try {
+      prepareCurrentWeek();
+      prepareOutlet("SO weekly report");
+      generateWeeklyReport();
+    } catch (e) { return; }
     return;
   }
 
   if (mode === "2") {
     try {
       prepareCustomWeek();
+      prepareOutlet("SO weekly report");
       generateWeeklyReport();
     } catch (e) {
       return;
@@ -1490,6 +1494,25 @@ function prepareCustomMonth() {
   reportSheet.getRange("B7").setValue(responseBulan.getResponseText().trim());
 }
 
+function prepareOutlet(sheetName) {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportSheet = ss.getSheetByName(sheetName);
+
+  const response = ui.prompt(
+    "Pilih Outlet",
+    "Masukkan nama outlet (Contoh: Melong, atau ketik Semua Outlet):",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    throw new Error("Dibatalkan");
+  }
+
+  const outlet = response.getResponseText().trim() || "Semua Outlet";
+  reportSheet.getRange("B8").setValue(outlet);
+}
+
 function generateMonthlyReportMenu() {
   const ui = SpreadsheetApp.getUi();
 
@@ -1506,14 +1529,18 @@ function generateMonthlyReportMenu() {
   const mode = response.getResponseText().trim();
 
   if (mode === "1") {
-    prepareCurrentMonth();
-    generateMonthlyReport();
+    try {
+      prepareCurrentMonth();
+      prepareOutlet("SO monthly report");
+      generateMonthlyReport();
+    } catch (e) { return; }
     return;
   }
 
   if (mode === "2") {
     try {
       prepareCustomMonth();
+      prepareOutlet("SO monthly report");
       generateMonthlyReport();
     } catch (e) {
       return;

@@ -1456,9 +1456,9 @@ function prepareCurrentMonth() {
   const today = new Date();
   const monthNames = ["January", "February", "March", "April", "May", "June",
                       "July", "August", "September", "October", "November", "December"];
-  const monthStr = monthNames[today.getMonth()] + " " + today.getFullYear();
-
-  reportSheet.getRange("B7").setValue(monthStr);
+  
+  reportSheet.getRange("B6").setValue(today.getFullYear());
+  reportSheet.getRange("B7").setValue(monthNames[today.getMonth()]);
 }
 
 function prepareCustomMonth() {
@@ -1466,17 +1466,28 @@ function prepareCustomMonth() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reportSheet = ss.getSheetByName("SO monthly report");
 
-  const response = ui.prompt(
-    "Custom Month",
-    "Masukkan bulan (Contoh: June 2026 atau Juni 2026):",
+  const responseTahun = ui.prompt(
+    "Custom Year",
+    "Masukkan tahun (Contoh: 2026):",
     ui.ButtonSet.OK_CANCEL
   );
 
-  if (response.getSelectedButton() !== ui.Button.OK) {
+  if (responseTahun.getSelectedButton() !== ui.Button.OK) {
     throw new Error("Dibatalkan");
   }
 
-  reportSheet.getRange("B7").setValue(response.getResponseText());
+  const responseBulan = ui.prompt(
+    "Custom Month",
+    "Masukkan bulan (Contoh: June atau Juni):",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (responseBulan.getSelectedButton() !== ui.Button.OK) {
+    throw new Error("Dibatalkan");
+  }
+
+  reportSheet.getRange("B6").setValue(responseTahun.getResponseText().trim());
+  reportSheet.getRange("B7").setValue(responseBulan.getResponseText().trim());
 }
 
 function generateMonthlyReportMenu() {
@@ -1518,16 +1529,19 @@ function generateMonthlyReport() {
   const reportSheet = ss.getSheetByName("SO monthly report");
   const logSheet = ss.getSheetByName(CONFIG.LOG_SHEET);
 
+  const yearValue = reportSheet.getRange("B6").getValue();
   const monthText = reportSheet.getRange("B7").getValue(); 
   const outletFilter = reportSheet.getRange("B8").getValue();
 
-  const parts = String(monthText).trim().split(" ");
-  if (parts.length < 2) {
-    SpreadsheetApp.getUi().alert("Format bulan tidak valid. Gunakan 'Bulan Tahun' contoh: 'June 2026'");
+  const monthName = String(monthText).trim();
+  const year = Number(yearValue);
+
+  if (!monthName || !year) {
+    SpreadsheetApp.getUi().alert("Bulan atau Tahun tidak boleh kosong!");
     return;
   }
-  const monthName = parts[0];
-  const year = Number(parts[1]);
+  
+  const displayMonthText = monthName + " " + year;
 
   const monthMap = {
     January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
@@ -1599,7 +1613,7 @@ function generateMonthlyReport() {
 
     if (!itemMap[kode]) {
       itemMap[kode] = {
-        month: monthText,
+        month: displayMonthText,
         outlet: outletFilter,
         kode: kode,
         nama: nama,

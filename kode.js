@@ -818,6 +818,8 @@ function generateWeeklyReport() {
   let totalSelisih = 0;
   let akurCount = 0;
 
+  const uniqueDates = new Set();
+
   for (let i = 1; i < logData.length; i++) {
     const row = logData[i];
 
@@ -843,6 +845,7 @@ function generateWeeklyReport() {
     }
 
     filtered.push(row);
+    uniqueDates.add(normalizeDate(tanggal));
 
     const kode = row[4];
     const nama = row[5];
@@ -902,7 +905,7 @@ function generateWeeklyReport() {
   )[0];
 
   // KPI
-  reportSheet.getRange("E7").setValue(filtered.length);
+  reportSheet.getRange("E7").setValue(uniqueDates.size);
   reportSheet.getRange("G7").setValue(totalUsage);
   reportSheet.getRange("I7").setValue(totalMasuk);
   reportSheet.getRange("K7").setValue(totalSelisih);
@@ -1035,7 +1038,19 @@ function parseWeekRange(weekText) {
     September: 8,
     October: 9,
     November: 10,
-    December: 11
+    December: 11,
+    Januari: 0,
+    Februari: 1,
+    Maret: 2,
+    April: 3,
+    Mei: 4,
+    Juni: 5,
+    Juli: 6,
+    Agustus: 7,
+    September: 8,
+    Oktober: 9,
+    November: 10,
+    Desember: 11
   };
 
   const month = monthMap[monthName];

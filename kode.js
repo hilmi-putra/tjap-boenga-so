@@ -855,13 +855,10 @@ function generateWeeklyReport() {
     const stokAkhir = Number(row[9]) || 0;
     const terpakai = Number(row[11]) || 0;
     const selisih = Number(row[12]) || 0;
-    const ket = row[13];
 
     totalUsage += terpakai;
     totalMasuk += masuk;
     totalSelisih += Math.abs(selisih);
-
-    if (String(ket).includes("Akur")) akurCount++;
 
     if (!itemMap[kode]) {
       itemMap[kode] = {
@@ -875,8 +872,7 @@ function generateWeeklyReport() {
         akhir: stokAkhir,
         usage: 0,
         selisih: 0,
-        entries: 0,
-        akur: 0
+        entries: 0
       };
     }
 
@@ -885,20 +881,22 @@ function generateWeeklyReport() {
     itemMap[kode].usage += terpakai;
     itemMap[kode].selisih += Math.abs(selisih);
     itemMap[kode].entries++;
-
-    if (String(ket).includes("Akur")) itemMap[kode].akur++;
   }
 
   if (filtered.length === 0) {
-    SpreadsheetApp.getUi().alert("Tidak ada data weekly");
+    SpreadsheetApp.getUi().alert("Info", "Tidak ada data untuk minggu ini.", SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
 
-  const items = Object.values(itemMap);
+  // Calculate Overall Accuracy by Volume
+  let accuracyRate = 1;
+  if (totalUsage > 0) {
+    accuracyRate = Math.max(0, 1 - (totalSelisih / totalUsage));
+  } else if (totalSelisih > 0) {
+    accuracyRate = 0;
+  }
 
-  const accuracyRate = filtered.length
-    ? akurCount / filtered.length
-    : 0;
+  const items = Object.values(itemMap);
 
   const worstItem = [...items].sort(
     (a, b) => b.selisih - a.selisih
@@ -960,9 +958,12 @@ function generateWeeklyReport() {
 
   items.forEach((item, idx) => {
     const row = 22 + idx;
-    const itemAccuracy = item.entries
-      ? item.akur / item.entries
-      : 0;
+    let itemAccuracy = 1;
+    if (item.usage > 0) {
+      itemAccuracy = Math.max(0, 1 - (item.selisih / item.usage));
+    } else if (item.selisih > 0) {
+      itemAccuracy = 0;
+    }
 
     reportSheet.getRange(`A${row}`).setValue(item.week);
     reportSheet.getRange(`B${row}`).setValue(item.outlet);

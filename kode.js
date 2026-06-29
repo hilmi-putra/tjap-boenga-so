@@ -122,6 +122,7 @@ function onOpen() {
     .addItem("✅ Submit SO Hari Ini", "submitSO")
     .addItem("🔄 Reset Sistem", "resetSistem")
     .addItem("📊 Generate Weekly Report", "generateWeeklyReportMenu")
+    .addItem("📈 Generate Monthly Report", "generateMonthlyReportMenu")
     .addSeparator()
     .addItem("📦 Closing Barang Masuk Bulanan", "submitBarangMasukBulanan")
     .addToUi();
@@ -1442,4 +1443,252 @@ function submitBarangMasukBulanan() {
   ).clearContent();
 
   ui.alert("Sukses", `Closing Barang Masuk untuk periode ${strBulanTahun} berhasil.\nSebanyak ${logsToInsert.length} data record dimasukkan ke Log.`, ui.ButtonSet.OK);
+}
+
+// =========================================================================
+// FITUR BARU: MONTHLY REPORT
+// =========================================================================
+
+function prepareCurrentMonth() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportSheet = ss.getSheetByName("SO monthly report");
+
+  const today = new Date();
+  const monthNames = ["January", "February", "March", "April", "May", "June",
+                      "July", "August", "September", "October", "November", "December"];
+  const monthStr = monthNames[today.getMonth()] + " " + today.getFullYear();
+
+  reportSheet.getRange("B7").setValue(monthStr);
+}
+
+function prepareCustomMonth() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportSheet = ss.getSheetByName("SO monthly report");
+
+  const response = ui.prompt(
+    "Custom Month",
+    "Masukkan bulan (Contoh: June 2026 atau Juni 2026):",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    throw new Error("Dibatalkan");
+  }
+
+  reportSheet.getRange("B7").setValue(response.getResponseText());
+}
+
+function generateMonthlyReportMenu() {
+  const ui = SpreadsheetApp.getUi();
+
+  const response = ui.prompt(
+    "Generate Monthly Report",
+    "Pilih mode:\n1 = Current Month\n2 = Custom Month",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+
+  const mode = response.getResponseText().trim();
+
+  if (mode === "1") {
+    prepareCurrentMonth();
+    generateMonthlyReport();
+    return;
+  }
+
+  if (mode === "2") {
+    try {
+      prepareCustomMonth();
+      generateMonthlyReport();
+    } catch (e) {
+      return;
+    }
+    return;
+  }
+
+  ui.alert("Mode tidak dikenali. Pilih 1 atau 2.");
+}
+
+function generateMonthlyReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportSheet = ss.getSheetByName("SO monthly report");
+  const logSheet = ss.getSheetByName(CONFIG.LOG_SHEET);
+
+  const monthText = reportSheet.getRange("B7").getValue(); 
+  const outletFilter = reportSheet.getRange("B8").getValue();
+
+  const parts = String(monthText).trim().split(" ");
+  if (parts.length < 2) {
+    SpreadsheetApp.getUi().alert("Format bulan tidak valid. Gunakan 'Bulan Tahun' contoh: 'June 2026'");
+    return;
+  }
+  const monthName = parts[0];
+  const year = Number(parts[1]);
+
+  const monthMap = {
+    January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+    July: 6, August: 7, September: 8, October: 9, November: 10, December: 11,
+    Januari: 0, Februari: 1, Maret: 2, Mei: 4, Juni: 5, Juli: 6,
+    Agustus: 7, Oktober: 9, Desember: 11
+  };
+  const targetMonth = monthMap[monthName];
+
+  if (targetMonth === undefined) {
+    SpreadsheetApp.getUi().alert("Nama bulan tidak dikenali: " + monthName);
+    return;
+  }
+
+  const logData = logSheet.getDataRange().getValues();
+  const filtered = [];
+  const uniqueDates = new Set();
+  
+  let totalUsage = 0;
+  let totalMasuk = 0;
+  let totalSelisih = 0;
+
+  const itemMap = {};
+
+  for (let i = 1; i < logData.length; i++) {
+    const row = logData[i];
+    const rawDate = row[1];
+    const outlet = row[2];
+
+    if (!rawDate) continue;
+    const dateObj = normalizeDate(rawDate);
+    if (!dateObj || isNaN(dateObj.getTime())) continue;
+
+    if (dateObj.getMonth() !== targetMonth || dateObj.getFullYear() !== year) {
+      continue;
+    }
+
+    if (outletFilter !== "Semua Outlet" && outlet !== outletFilter) {
+      continue;
+    }
+
+    filtered.push(row);
+    uniqueDates.add(dateObj.getTime());
+
+    const kode = row[4];
+    const nama = row[5];
+    const satuan = row[7];
+    const stokAwal = Number(row[8]) || 0;
+    const masuk = Number(row[9]) || 0;
+    const stokAkhir = Number(row[10]) || 0;
+    const terpakai = Number(row[12]) || 0;
+    const selisih = Number(row[13]) || 0;
+
+    totalUsage += terpakai;
+    totalMasuk += masuk;
+    totalSelisih += Math.abs(selisih);
+
+    if (!itemMap[kode]) {
+      itemMap[kode] = {
+        month: monthText,
+        outlet: outletFilter,
+        nama: nama,
+        satuan: satuan,
+        awal: stokAwal, 
+        masuk: 0,
+        akhir: stokAkhir, 
+        usage: 0,
+        selisih: 0,
+        entries: 0
+      };
+    }
+
+    itemMap[kode].masuk += masuk;
+    itemMap[kode].akhir = stokAkhir;
+    itemMap[kode].usage += terpakai;
+    itemMap[kode].selisih += Math.abs(selisih);
+    itemMap[kode].entries++;
+  }
+
+  if (filtered.length === 0) {
+    SpreadsheetApp.getUi().alert("Info", "Tidak ada data untuk bulan ini.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  let accuracyRate = 1;
+  if (totalUsage > 0) {
+    accuracyRate = Math.max(0, 1 - (totalSelisih / totalUsage));
+  } else if (totalSelisih > 0) {
+    accuracyRate = 0;
+  }
+
+  const items = Object.values(itemMap);
+  const worstItem = [...items].sort((a, b) => b.selisih - a.selisih)[0];
+
+  reportSheet.getRange("E7").setValue(uniqueDates.size);
+  reportSheet.getRange("G7").setValue(totalUsage);
+  reportSheet.getRange("I7").setValue(totalMasuk);
+  reportSheet.getRange("K7").setValue(totalSelisih);
+  reportSheet.getRange("M7").setValue(accuracyRate);
+  reportSheet.getRange("O7").setValue(worstItem ? worstItem.nama : "-");
+  reportSheet.getRange("O8").setValue(worstItem ? `Selisih: ${worstItem.selisih}` : "");
+
+  const topUsage = [...items].sort((a, b) => b.usage - a.usage).slice(0, 5);
+  reportSheet.getRange("A13:E17").clearContent();
+  topUsage.forEach((item, idx) => {
+    const row = 13 + idx;
+    reportSheet.getRange(`A${row}`).setValue(idx + 1);
+    reportSheet.getRange(`B${row}`).setValue(item.kode);
+    reportSheet.getRange(`C${row}`).setValue(item.nama);
+    reportSheet.getRange(`E${row}`).setValue(item.usage);
+  });
+
+  const topSelisih = [...items].sort((a, b) => b.selisih - a.selisih).slice(0, 5);
+  reportSheet.getRange("G13:L17").clearContent();
+  topSelisih.forEach((item, idx) => {
+    const row = 13 + idx;
+    reportSheet.getRange(`G${row}`).setValue(idx + 1);
+    reportSheet.getRange(`I${row}`).setValue(item.kode);
+    reportSheet.getRange(`J${row}`).setValue(item.nama);
+    reportSheet.getRange(`L${row}`).setValue(item.selisih);
+  });
+
+  const notes = [
+    `• Accuracy bulan ini ${(accuracyRate * 100).toFixed(1)}%`,
+    `• ${topSelisih.length} item punya selisih`,
+    `• Worst item: ${worstItem?.nama || "-"}`,
+    `• Total usage ${totalUsage.toLocaleString()}`
+  ].join("\n");
+  reportSheet.getRange("O11").setValue(notes);
+
+  reportSheet.getRange("A22:Q500").clearContent();
+  items.forEach((item, idx) => {
+    const row = 22 + idx;
+    let itemAccuracy = 1;
+    if (item.usage > 0) {
+      itemAccuracy = Math.max(0, 1 - (item.selisih / item.usage));
+    } else if (item.selisih > 0) {
+      itemAccuracy = 0;
+    }
+
+    reportSheet.getRange(`A${row}`).setValue(item.month);
+    reportSheet.getRange(`B${row}`).setValue(item.outlet);
+    reportSheet.getRange(`C${row}`).setValue(item.kode);
+    reportSheet.getRange(`E${row}`).setValue(item.nama);
+    reportSheet.getRange(`G${row}`).setValue(item.satuan);
+    reportSheet.getRange(`H${row}`).setValue(item.awal);
+    reportSheet.getRange(`J${row}`).setValue(item.masuk);
+    reportSheet.getRange(`L${row}`).setValue(item.akhir);
+    reportSheet.getRange(`N${row}`).setValue(item.usage);
+    reportSheet.getRange(`P${row}`).setValue(item.selisih);
+    reportSheet.getRange(`Q${row}`).setValue(itemAccuracy);
+  });
+
+  reportSheet.getRange("Q22:Q500").setNumberFormat("0.0%");
+
+  const inputSheet = ss.getSheetByName(CONFIG.INPUT_SHEET);
+  const picName = inputSheet ? inputSheet.getRange("B4").getValue() : "System";
+  const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+  
+  reportSheet.getRange("Q2").setValue(nowStr);
+  reportSheet.getRange("Q3").setValue(picName);
+
+  SpreadsheetApp.getUi().alert("Sukses", "Monthly Report berhasil di-generate!", SpreadsheetApp.getUi().ButtonSet.OK);
 }

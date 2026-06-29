@@ -861,7 +861,7 @@ function generateWeeklyReport() {
     totalMasuk += masuk;
     totalSelisih += Math.abs(selisih);
 
-    if (ket === "Akur") akurCount++;
+    if (String(ket).includes("Akur")) akurCount++;
 
     if (!itemMap[kode]) {
       itemMap[kode] = {
@@ -886,7 +886,7 @@ function generateWeeklyReport() {
     itemMap[kode].selisih += Math.abs(selisih);
     itemMap[kode].entries++;
 
-    if (ket === "Akur") itemMap[kode].akur++;
+    if (String(ket).includes("Akur")) itemMap[kode].akur++;
   }
 
   if (filtered.length === 0) {

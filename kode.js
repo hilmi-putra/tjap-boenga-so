@@ -1586,12 +1586,12 @@ function generateMonthlyReport() {
 
     const kode = row[4];
     const nama = row[5];
-    const satuan = row[7];
-    const stokAwal = Number(row[8]) || 0;
-    const masuk = Number(row[9]) || 0;
-    const stokAkhir = Number(row[10]) || 0;
-    const terpakai = Number(row[12]) || 0;
-    const selisih = Number(row[13]) || 0;
+    const satuan = row[6];
+    const stokAwal = Number(row[7]) || 0;
+    const masuk = Number(row[8]) || 0;
+    const stokAkhir = Number(row[9]) || 0;
+    const terpakai = Number(row[11]) || 0;
+    const selisih = Number(row[12]) || 0;
 
     totalUsage += terpakai;
     totalMasuk += masuk;
@@ -1601,6 +1601,7 @@ function generateMonthlyReport() {
       itemMap[kode] = {
         month: monthText,
         outlet: outletFilter,
+        kode: kode,
         nama: nama,
         satuan: satuan,
         awal: stokAwal, 

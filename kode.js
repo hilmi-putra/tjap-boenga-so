@@ -125,7 +125,28 @@ function onOpen() {
     .addItem("📈 Generate Monthly Report", "generateMonthlyReportMenu")
     .addSeparator()
     .addItem("📦 Closing Barang Masuk Bulanan", "submitBarangMasukBulanan")
+    .addSeparator()
+    .addItem("📅 Refresh SO Daily Dashboard", "refreshSODailyDashboard")
     .addToUi();
+
+  try {
+    setDefaultMonthYear();
+  } catch(e) {}
+}
+
+function setDefaultMonthYear() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("SO daily");
+  if (!sheet) return;
+  
+  const today = new Date();
+  const monthNames = ["January", "February", "March", "April", "May", "June",
+                      "July", "August", "September", "October", "November", "December"];
+  
+  sheet.getRange("W2").setValue(monthNames[today.getMonth()]);
+  sheet.getRange("W3").setValue(today.getFullYear());
+  
+  refreshSODailyDashboard();
 }
 
 function getJumlahBarisItem(sheet) {
@@ -742,6 +763,24 @@ function submitSO() {
 
   clearAdjustmentTable(input);
 
+  // ---- BARU: Refresh SO Daily Dashboard jika tanggal yang disubmit sesuai filter yang sedang aktif
+  try {
+    const dailySheet = ss.getSheetByName("SO daily");
+    if (dailySheet) {
+      const selectedMonth = dailySheet.getRange("W2").getValue();
+      const selectedYear = dailySheet.getRange("W3").getValue();
+      const monthNames = ["January", "February", "March", "April", "May", "June",
+                          "July", "August", "September", "October", "November", "December"];
+      
+      const sMonth = monthNames[tanggalRaw.getMonth()];
+      const sYear = tanggalRaw.getFullYear();
+      
+      if (selectedMonth === sMonth && Number(selectedYear) === sYear) {
+        refreshSODailyDashboard();
+      }
+    }
+  } catch(e) {}
+
   ui.alert("✔ Submit berhasil");
 }
 
@@ -1202,9 +1241,22 @@ function prepareCustomWeek() {
 }
 
 function onEdit(e) {
+  if (!e || !e.range) return;
   const sheet = e.range.getSheet();
+  const sheetName = sheet.getName();
 
-  if (sheet.getName() !== CONFIG.INPUT_SHEET) return;
+  if (sheetName === "SO daily") {
+    const row = e.range.getRow();
+    const col = e.range.getColumn();
+    
+    // Check if W2 (Bulan) or W3 (Tahun) is edited (col 23)
+    if ((row === 2 || row === 3) && col === 23) {
+      refreshSODailyDashboard();
+    }
+    return;
+  }
+
+  if (sheetName !== CONFIG.INPUT_SHEET) return;
 
   const row = e.range.getRow();
   const col = e.range.getColumn();
@@ -1722,4 +1774,184 @@ function generateMonthlyReport() {
   reportSheet.getRange("Q3").setValue(picName);
 
   SpreadsheetApp.getUi().alert("Sukses", "Monthly Report berhasil di-generate!", SpreadsheetApp.getUi().ButtonSet.OK);
+}// ============================================================
+// BARU: FITUR SO DAILY DASHBOARD PER TANGGAL
+// ============================================================
+
+function refreshSODailyDashboard() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dailySheet = ss.getSheetByName("SO daily");
+  const logSheet = ss.getSheetByName(CONFIG.LOG_SHEET);
+  
+  if (!dailySheet || !logSheet) return;
+
+  const monthName = String(dailySheet.getRange("W2").getValue()).trim();
+  const year = String(dailySheet.getRange("W3").getValue()).trim();
+  if (!monthName || !year) {
+    ss.toast("Pilih Bulan dan Tahun terlebih dahulu.");
+    return;
+  }
+
+  const monthNames = ["January", "February", "March", "April", "May", "June",
+                      "July", "August", "September", "October", "November", "December"];
+  const monthIndex = monthNames.indexOf(monthName);
+  if (monthIndex === -1) {
+    ss.toast("Nama bulan tidak valid: " + monthName);
+    return;
+  }
+
+  ss.toast("Memproses data dashboard...");
+
+  const sections = findDateSections(dailySheet);
+  const availableRowsMap = clearAndGetAvailableRows(dailySheet, sections);
+
+  const logData = logSheet.getDataRange().getValues();
+  if (logData.length <= 1) return;
+
+  const dataByDate = {};
+  let totalDataMapped = 0;
+
+  for (let i = 1; i < logData.length; i++) {
+    const row = logData[i];
+    const tanggalVal = row[1]; // Kolom B: Tanggal SO
+    if (!tanggalVal) continue;
+    
+    let dateObj;
+    if (Object.prototype.toString.call(tanggalVal) === '[object Date]') {
+      dateObj = tanggalVal;
+    } else if (typeof tanggalVal === 'string') {
+      const str = tanggalVal.trim();
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const yearPart = parts[2].split(' ')[0];
+        dateObj = new Date(yearPart, parts[1] - 1, parts[0]);
+      } else {
+        dateObj = new Date(str);
+      }
+    } else {
+      dateObj = new Date(tanggalVal);
+    }
+    
+    if (isNaN(dateObj.getTime())) continue;
+    
+    if (dateObj.getMonth() === monthIndex && dateObj.getFullYear() === Number(year)) {
+      const day = dateObj.getDate();
+      if (!dataByDate[day]) dataByDate[day] = [];
+      dataByDate[day].push(row);
+      totalDataMapped++;
+    }
+  }
+
+  let debugLog = "Data Log=" + totalDataMapped + " | Tgl Log: " + Object.keys(dataByDate).join(",") + " | ";
+  let populatedCount = 0;
+
+  // Populate data ke setiap section tanggal
+  for (const day in dataByDate) {
+    if (!sections[day]) {
+      debugLog += "[Tgl " + day + " No Sec] ";
+    } else {
+      let avail = availableRowsMap[day];
+      debugLog += "[Tgl " + day + " R" + sections[day].row + " Avail=" + avail + "] ";
+      if (avail > 0) {
+        populateDateSection(dailySheet, sections[day], dataByDate[day], avail);
+        populatedCount++;
+      }
+    }
+  }
+  
+  let allFoundSecs = Object.keys(sections).join(",");
+  debugLog += "| Sec Found: " + allFoundSecs;
+  
+  dailySheet.getRange("Y1").setValue(debugLog);
+  ss.toast(Render selesai. Update  + populatedCount +  tabel. Cek Y1);
+}
+
+function findDateSections(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return {};
+  
+  const data = sheet.getRange(1, 1, lastRow, 30).getDisplayValues();
+  const sections = {};
+  
+  for (let r = 0; r < data.length; r++) {
+    for (let c = 0; c < data[r].length; c++) {
+      const val = String(data[r][c]).trim();
+      if (!val) continue;
+      
+      const upperVal = val.toUpperCase();
+      if (upperVal.includes("TANGGAL")) {
+        const match = upperVal.match(/TANGGAL\D*(\d+)/);
+        if (match) {
+          const dateNum = parseInt(match[1], 10);
+          
+          let baseCol = c + 1; 
+          if (r + 1 < data.length) {
+            for (let i = Math.max(0, c - 2); i <= Math.min(data[0].length - 1, c + 2); i++) {
+              if (String(data[r + 1][i]).trim().toUpperCase() === "NO") {
+                baseCol = i + 1;
+                break;
+              }
+            }
+          }
+          
+          sections[dateNum] = { row: r + 1, col: baseCol };
+        }
+      }
+    }
+  }
+  return sections;
+}
+
+function clearAndGetAvailableRows(sheet, sections) {
+  const availableRowsMap = {};
+  
+  for (const day in sections) {
+    const sec = sections[day];
+    let availableRows = 0;
+    
+    const dataStartRow = sec.row + 2;
+    
+    const checkValues = sheet.getRange(dataStartRow, sec.col, 50, 1).getValues();
+    for (let i = 0; i < 50; i++) {
+      const val = String(checkValues[i][0]).toUpperCase().trim();
+      if (val.includes("KALIBRASI") || val.includes("BARISTA") || val.includes("TANGGAL") || val.includes("JATAH") || val.includes("WASTE") || val === "H/ WASTE") {
+        break;
+      }
+      availableRows++;
+    }
+    
+    availableRowsMap[day] = availableRows;
+    
+    if (availableRows > 0) {
+      sheet.getRange(dataStartRow, sec.col + 1, availableRows, 9).clearContent();
+    }
+  }
+  return availableRowsMap;
+}
+
+function populateDateSection(sheet, sec, logRows, availableRows) {
+  if (logRows.length === 0 || availableRows === 0) return;
+  
+  const valuesToSet = [];
+  const limit = Math.min(logRows.length, availableRows);
+  
+  for (let i = 0; i < limit; i++) {
+    const row = logRows[i];
+    
+    valuesToSet.push([
+      row[5],  // F: Nama Barang
+      row[6],  // G: Satuan
+      row[7],  // H: Stok Awal
+      row[8],  // I: Barang Masuk
+      row[9],  // J: Stok Akhir
+      row[11], // L: Terpakai (Di log posisinya sesudah System Base)
+      row[10], // K: System Base 
+      row[12], // M: Selisih
+      row[13]  // N: Keterangan
+    ]);
+  }
+  
+  if (valuesToSet.length > 0) {
+    sheet.getRange(sec.row + 2, sec.col + 1, valuesToSet.length, 9).setValues(valuesToSet);
+  }
 }
